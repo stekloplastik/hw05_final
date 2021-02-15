@@ -143,19 +143,19 @@ class ViewPageContextTest(TestCase):
 
     def test_cache(self):
         """Главная страница корректно кэширует список записей."""
-        # Получаем контент страницы
+
         response_before = self.user_one_client.get(reverse('index'))
         page_before_clear_cache = response_before.content
-        # Меняем пост в БД
+
         post = Post.objects.latest('id')
         post.text = 'Кэш ' + post.text
         post.save()
-        # Получаем контент страницы после обновления
+
         response_before = self.user_one_client.get(reverse('index'))
         page_before_clear_cache_refresh = response_before.content
         self.assertEqual(page_before_clear_cache,
                          page_before_clear_cache_refresh)
-        # После очистки кэша страницы будут отличатся
+
         cache.clear()
         response_after = self.user_one_client.get(reverse('index'))
         page_after_clear_cache = response_after.content
