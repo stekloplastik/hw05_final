@@ -1,9 +1,9 @@
 import os
 import tempfile
 import shutil
+from django.core.cache import cache
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
 from django import forms
@@ -61,6 +61,7 @@ class ViewPageContextTest(TestCase):
             group=self.test_group,
             image=self.uploaded,
         )
+        cache.clear()
 
     @classmethod
     def tearDownClass(cls):
@@ -142,17 +143,23 @@ class ViewPageContextTest(TestCase):
 
     def test_cache(self):
         """Главная страница корректно кэширует список записей."""
-        first_response = self.guest_client.get(reverse('index'))
-        first_post = first_response.context['page'][0]
-
-        self.test_post.text = 'Кэш кэш кэш'
-
-        second_response = self.guest_client.get(reverse('index'))
-        second_post = second_response.context['page'][0]
-
-        msg = 'На главной странице не работает кэширование'
-
-        self.assertEqual(first_post, second_post, msg)
+        # Получаем контент страницы
+        response_before = self.user_one_client.get(reverse('index'))
+        page_before_clear_cache = response_before.content
+        # Меняем пост в БД
+        post = Post.objects.latest('id')
+        post.text = 'Кэш ' + post.text
+        post.save()
+        # Получаем контент страницы после обновления
+        response_before = self.user_one_client.get(reverse('index'))
+        page_before_clear_cache_refresh = response_before.content
+        self.assertEqual(page_before_clear_cache,
+                         page_before_clear_cache_refresh)
+        # После очистки кэша страницы будут отличатся
+        cache.clear()
+        response_after = self.user_one_client.get(reverse('index'))
+        page_after_clear_cache = response_after.content
+        self.assertNotEqual(page_before_clear_cache, page_after_clear_cache)
 
     def test_url_templates(self):
         """Соответствие вызываемых шаблонов."""
@@ -281,28 +288,26 @@ class ViewPageContextTest(TestCase):
 
 
 class PaginatorViewsTest(TestCase):
-    # Здесь создаются фикстуры: клиент и 13 тестовых записей.
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        User = get_user_model()
-        cls.user = User.objects.create(username='TestUser')
-        cls.group = Group.objects.create(
-            title='Test',
-            description='Тестовая группа'
+    def setUp(self):
+        self.user = User.objects.create_user(username='User')
+        self.user_client = Client()
+        self.user_client.force_login(self.user)
+        self.test_group = Group.objects.create(
+            title='Test Group',
+            slug='group',
+            description='Description',
         )
-        posts = [Post(author=cls.user, group=cls.group, text=str(i))
+        posts = [Post(author=self.user, group=self.test_group, text=str(i))
                  for i in range(13)]
 
         Post.objects.bulk_create(posts)
+        cache.clear()
 
     def test_first_page_containse_ten_records(self):
-        response = self.client.get(reverse('index'))
-        # Проверка: количество постов на первой странице равно 10.
+        response = self.user_client.get(reverse('index'))
 
         self.assertEqual(len(response.context.get('page').object_list), 10)
 
     def test_second_page_containse_three_records(self):
-        # Проверка: на второй странице должно быть три поста.
-        response = self.client.get(reverse('index') + '?page=2')
+        response = self.user_client.get(reverse('index') + '?page=2')
         self.assertEqual(len(response.context.get('page').object_list), 3)
