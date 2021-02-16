@@ -93,8 +93,7 @@ class ViewPageContextTest(TestCase):
             group=self.test_group,
         )
 
-        follow = reverse('profile_follow', args=[self.user_two])
-        self.user_one_client.get(follow)
+        Follow.objects.create(user=self.user_one, author=self.user_two)
 
         url = reverse('follow_index')
 
